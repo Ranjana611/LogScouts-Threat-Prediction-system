@@ -20,21 +20,52 @@ class DataPreprocessor:
         self.feature_columns = None
         self.categorical_mappings = {}
 
-    def load_dataset(self, filepath, delimiter='\t'):
+    def load_dataset(self, filepath, delimiter=None):
         """
-        Load dataset from CSV/TSV file
+        Load dataset from CSV file
+        Auto-detects delimiter if not specified
         """
         try:
-            # Try different delimiters
-            try:
-                df = pd.read_csv(
-                    filepath, delimiter=delimiter, low_memory=False)
-            except:
-                df = pd.read_csv(filepath, low_memory=False)
+            # Try to detect delimiter automatically
+            if delimiter is None:
+                # Read first line to detect delimiter
+                with open(filepath, 'r') as f:
+                    first_line = f.readline()
+
+                # Check which delimiter is present
+                if '\t' in first_line:
+                    delimiter = '\t'
+                    print("  Detected delimiter: TAB")
+                elif ',' in first_line:
+                    delimiter = ','
+                    print("  Detected delimiter: COMMA")
+                else:
+                    delimiter = ','
+                    print("  Using default delimiter: COMMA")
+
+            # Load with detected delimiter
+            df = pd.read_csv(filepath, delimiter=delimiter, low_memory=False)
+
+            # Check if columns were parsed correctly
+            if len(df.columns) == 1:
+                # Single column means wrong delimiter, try other options
+                print("  ⚠ Single column detected, trying alternative delimiters...")
+
+                for delim in ['\t', ',', ';', '|', ' ']:
+                    try:
+                        df = pd.read_csv(
+                            filepath, delimiter=delim, low_memory=False)
+                        if len(df.columns) > 1:
+                            print(
+                                f"  ✓ Successfully parsed with delimiter: {repr(delim)}")
+                            break
+                    except:
+                        continue
 
             print(f"✓ Dataset loaded successfully")
             print(f"  Total records: {len(df):,}")
-            print(f"  Columns: {df.columns.tolist()}")
+            print(f"  Columns found: {len(df.columns)}")
+            print(f"  Column names: {df.columns.tolist()}\n")
 
             # Basic validation
             required_columns = ['ip', 'timestamp',
@@ -43,8 +74,9 @@ class DataPreprocessor:
                 col for col in required_columns if col not in df.columns]
 
             if missing_columns:
-                raise ValueError(
-                    f"Missing required columns: {missing_columns}")
+                print(f"⚠ Warning: Missing columns: {missing_columns}")
+                print(f"Available columns: {df.columns.tolist()}")
+                raise ValueError(f"Missing required columns: {missing_columns}")
 
             return df
 
@@ -78,7 +110,7 @@ class DataPreprocessor:
         print(f"\nClass Imbalance Ratio: {imbalance_ratio:.2f}:1")
 
         if imbalance_ratio > 3:
-            print("⚠ Warning: Significant class imbalance detected!")
+            print("Warning: Significant class imbalance detected!")
             print("  Recommendation: Consider using class weights or SMOTE")
 
         # Time span analysis
