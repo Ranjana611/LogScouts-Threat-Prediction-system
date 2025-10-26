@@ -10,3 +10,10 @@ __pycache__/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Ignore all files inside results and uploads folders
+/results/*
+/uploads/*
+# But keep the .gitkeep file
+!/results/.gitkeep
+!/uploads/.gitkeep
