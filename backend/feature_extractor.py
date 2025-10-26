@@ -68,7 +68,7 @@ class ThreatFeatureExtractor:
 
         # DVWA specific features
         features['is_dvwa_vulnerability'] = '/vulnerabilities/' in path
-        features['dvwa_module'] = self._extract_dvwa_module(path)
+        #features['dvwa_module'] = self._extract_dvwa_module(path)
 
         # Payload analysis
         combined_payload = f"{uri} {payload}" if payload and payload != '-' else uri
@@ -134,12 +134,31 @@ class ThreatFeatureExtractor:
 
         return entropy
 
-    def extract_temporal_features(self, df, window_minutes=5):
+    def extract_temporal_features(self, df, column_mapping=None, window_minutes=5):
         """Extract time-based features for DDoS and brute force detection"""
+
+        # Handle column mapping
+        if column_mapping is None:
+            ts_col = 'timestamp'
+            ip_col = 'ip'
+            uri_col = 'uri'
+            status_col = 'status'
+        else:
+            ts_col = column_mapping.get('timestamp', 'timestamp')
+            ip_col = column_mapping.get('ip', 'ip')
+            uri_col = column_mapping.get('uri', 'uri')
+            status_col = column_mapping.get('status', 'status')
+
         df = df.copy()
-        df['parsed_timestamp'] = df['timestamp'].apply(self.parse_timestamp)
-        df = df.dropna(subset=['parsed_timestamp']
-                       ).sort_values('parsed_timestamp')
+
+        # Check if columns exist
+        if ts_col not in df.columns:
+            print(
+                f"⚠️  Timestamp column '{ts_col}' not found, skipping temporal features")
+            return pd.DataFrame(index=df.index)
+
+        df['parsed_timestamp'] = df[ts_col].apply(self.parse_timestamp)
+        df = df.dropna(subset=['parsed_timestamp']).sort_values('parsed_timestamp')
 
         temporal_features = []
 
@@ -237,18 +256,50 @@ class ThreatFeatureExtractor:
         return features
 
     def create_feature_matrix(self, df):
-        """Create complete feature matrix from log data"""
+        
         print("Extracting URL and payload features...")
+
+        # Handle different column name variations
+        # Some CSVs might have different column names
+        column_mapping = {
+            'uri': ['uri', 'url', 'request', 'path'],
+            'payload': ['payload', 'data', 'body'],
+            'user_agent': ['user_agent', 'user-agent', 'useragent', 'ua'],
+            'method': ['method', 'http_method'],
+            'status': ['status', 'status_code', 'http_status'],
+            'ip': ['ip', 'client_ip', 'remote_addr']
+        }
+
+        # Map columns
+        mapped_cols = {}
+        for standard_name, variations in column_mapping.items():
+            for variation in variations:
+                if variation in df.columns:
+                    mapped_cols[standard_name] = variation
+                    break
+            if standard_name not in mapped_cols:
+                print(f"⚠️  Warning: '{standard_name}' column not found")
+                mapped_cols[standard_name] = None
+
+        print(f"Column mapping: {mapped_cols}\n")
+
         url_features_list = []
         ua_features_list = []
 
         for idx, row in df.iterrows():
+            # Get values with fallback
+            uri = row.get(mapped_cols['uri'], '') if mapped_cols['uri'] else ''
+            payload = row.get(mapped_cols['payload'],
+                            '-') if mapped_cols['payload'] else '-'
+            user_agent = row.get(
+                mapped_cols['user_agent'], '') if mapped_cols['user_agent'] else ''
+
             # URL features
-            url_feats = self.extract_url_features(row['uri'], row['payload'])
+            url_feats = self.extract_url_features(uri, payload)
             url_features_list.append(url_feats)
 
             # User agent features
-            ua_feats = self.extract_user_agent_features(row['user_agent'])
+            ua_feats = self.extract_user_agent_features(user_agent)
             ua_features_list.append(ua_feats)
 
         # Convert to DataFrames
@@ -256,22 +307,38 @@ class ThreatFeatureExtractor:
         ua_features_df = pd.DataFrame(ua_features_list)
 
         print("Extracting temporal features...")
-        temporal_features_df = self.extract_temporal_features(df)
+        temporal_features_df = self.extract_temporal_features(df, mapped_cols)
 
         # Combine all features
         print("Combining feature sets...")
+
+        # Get base columns that exist
+        base_cols = []
+        for col in ['ip', 'timestamp', 'method', 'status', 'label']:
+            if col in df.columns:
+                base_cols.append(col)
+            elif mapped_cols.get(col) and mapped_cols[col] in df.columns:
+                base_cols.append(mapped_cols[col])
+
         feature_matrix = pd.concat([
-            df[['ip', 'timestamp', 'method', 'status', 'label']
-               ].reset_index(drop=True),
+            df[base_cols].reset_index(drop=True),
             url_features_df.reset_index(drop=True),
             ua_features_df.reset_index(drop=True),
             temporal_features_df.reset_index(drop=True)
         ], axis=1)
 
         # Add basic statistical features
-        feature_matrix['status_class'] = feature_matrix['status'] // 100
-        feature_matrix['is_error'] = feature_matrix['status'] >= 400
-        feature_matrix['is_post_request'] = feature_matrix['method'] == 'POST'
+        if 'status' in feature_matrix.columns:
+            feature_matrix['status_class'] = feature_matrix['status'] // 100
+            feature_matrix['is_error'] = feature_matrix['status'] >= 400
+        elif mapped_cols['status'] in feature_matrix.columns:
+            feature_matrix['status_class'] = feature_matrix[mapped_cols['status']] // 100
+            feature_matrix['is_error'] = feature_matrix[mapped_cols['status']] >= 400
+
+        if 'method' in feature_matrix.columns:
+            feature_matrix['is_post_request'] = feature_matrix['method'] == 'POST'
+        elif mapped_cols['method'] in feature_matrix.columns:
+            feature_matrix['is_post_request'] = feature_matrix[mapped_cols['method']] == 'POST'
 
         return feature_matrix
 
