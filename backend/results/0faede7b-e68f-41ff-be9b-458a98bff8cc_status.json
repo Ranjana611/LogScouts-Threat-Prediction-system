@@ -1,0 +1,1 @@
+{"job_id": "0faede7b-e68f-41ff-be9b-458a98bff8cc", "status": "error", "message": "X has 1 features, but RandomForestClassifier is expecting 32 features as input.", "timestamp": "2025-10-11T21:06:12.437514"}
