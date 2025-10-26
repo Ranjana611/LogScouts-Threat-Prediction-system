@@ -1,0 +1,25 @@
+{
+  "random_forest": {
+    "accuracy": 0.999726352275837,
+    "precision": 0.9997755220801645,
+    "recall": 0.9996422238510341,
+    "f1_score": 0.9997088383207492,
+    "training_time": 1.142143
+  },
+  "gradient_boosting": {
+    "accuracy": 0.999726352275837,
+    "precision": 0.9997089354490848,
+    "recall": 0.9997089354490848,
+    "f1_score": 0.9997089354490848,
+    "training_time": 96.07531
+  },
+  "best_model": "Gradient Boosting",
+  "label_classes": [
+    "brute_force",
+    "ddos",
+    "normal",
+    "sql_injection",
+    "xss"
+  ],
+  "num_features": 32
+}
