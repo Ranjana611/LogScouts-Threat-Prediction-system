@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Threat Prediction System</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            color: #667eea;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #666;
+            font-size: 1.1em;
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .card {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        }
+
+        .upload-section {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .upload-section h2 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .upload-section>p {
+            color: #666;
+            margin: 0;
+        }
+
+        .upload-area {
+            border: 3px dashed #667eea;
+            border-radius: 10px;
+            padding: 40px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            background: #f8f9ff;
+            min-height: 200px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .upload-area:hover {
+            background: #e8ebff;
+            border-color: #764ba2;
+            transform: scale(1.02);
+        }
+
+        .upload-area.dragover {
+            background: #d8ddff;
+            border-color: #764ba2;
+            transform: scale(1.05);
+        }
+
+        .upload-icon {
+            font-size: 3em;
+            margin-bottom: 15px;
+        }
+
+        .upload-area h3 {
+            color: #333;
+            margin: 10px 0;
+        }
+
+        .upload-area p {
+            color: #999;
+            margin: 5px 0;
+        }
+
+        .btn {
+            padding: 12px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1em;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: 600;
+            width: 100%;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .status-section {
+            display: none;
+        }
+
+        .status-section.active {
+            display: block;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #e0e0e0;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 20px 0;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            width: 0%;
+            transition: width 0.5s;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.7;
+            }
+        }
+
+        .results-section {
+            display: none;
+        }
+
+        .results-section.active {
+            display: block;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-bottom: 25px;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .stat-card.danger {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+        }
+
+        .stat-card.warning {
+            background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+            color: white;
+        }
+
+        .stat-card.success {
+            background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+        }
+
+        .stat-value {
+            font-size: 2.5em;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+
+        .stat-label {
+            font-size: 0.9em;
+            opacity: 0.9;
+        }
+
+        .threat-list {
+            margin-top: 20px;
+        }
+
+        .threat-list h3 {
+            color: #333;
+            margin-bottom: 15px;
+        }
+
+        .threat-item {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            border-left: 4px solid #667eea;
+        }
+
+        .threat-item.high-risk {
+            border-left-color: #f5576c;
+            background: #fff5f5;
+        }
+
+        .threat-item.medium-risk {
+            border-left-color: #ffa726;
+            background: #fff8f0;
+        }
+
+        .threat-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .threat-type {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .confidence-badge {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: 600;
+        }
+
+        .confidence-high {
+            background: #4caf50;
+            color: white;
+        }
+
+        .confidence-medium {
+            background: #ff9800;
+            color: white;
+        }
+
+        .confidence-low {
+            background: #9e9e9e;
+            color: white;
+        }
+
+        .recommendations {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+
+        .recommendations h3 {
+            color: #856404;
+            margin-bottom: 15px;
+        }
+
+        .recommendation-item {
+            padding: 10px;
+            margin-bottom: 8px;
+            background: white;
+            border-radius: 5px;
+            border-left: 3px solid #ffc107;
+        }
+
+        .chart-container {
+            margin-top: 20px;
+            height: 300px;
+            position: relative;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        .file-info {
+            margin-top: 15px;
+            padding: 10px;
+            background: #e8f5e9;
+            border-radius: 5px;
+            display: none;
+            color: #333;
+        }
+
+        .file-info.active {
+            display: block;
+        }
+
+        .error-message {
+            background: #ffebee;
+            border: 1px solid #f44336;
+            color: #c62828;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            display: none;
+        }
+
+        .error-message.active {
+            display: block;
+        }
+
+        @media (max-width: 968px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>🛡️ Web Threat Prediction System</h1>
+            <p>AI-Powered Server Log Analysis for DDoS, Brute Force, XSS & SQL Injection Detection</p>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Upload Section -->
+            <div class="card upload-section">
+                <h2>📤 Upload Log File</h2>
+                <p>Upload your Apache server log file for analysis</p>
+
+                <div class="error-message" id="errorMessage"></div>
+
+                <div class="upload-area" id="uploadArea">
+                    <div class="upload-icon">📁</div>
+                    <h3>Drag & Drop Log File</h3>
+                    <p>or click to browse</p>
+                    <p style="font-size: 0.9em; color: #999; margin-top: 10px;">
+                        Supports: CSV, TSV (Max 100MB)
+                    </p>
+                </div>
+
+                <input type="file" id="fileInput" accept=".csv,.tsv,.txt">
+
+                <div class="file-info" id="fileInfo">
+                    <strong>Selected File:</strong> <span id="fileName"></span><br>
+                    <strong>Size:</strong> <span id="fileSize"></span>
+                </div>
+
+                <button class="btn btn-primary" id="uploadBtn" disabled>
+                    Analyze Log File
+                </button>
+
+                <!-- Status Section -->
+                <div class="status-section" id="statusSection">
+                    <h3>⏳ Processing...</h3>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+                    <p id="statusMessage">Uploading file...</p>
+                    <p style="font-size: 0.9em; color: #666; margin-top: 10px;">
+                        Job ID: <span id="jobId">-</span>
+                    </p>
+                </div>
+            </div>
+
+            <!-- Results Section -->
+            <div class="card results-section" id="resultsSection">
+                <h2>📊 Analysis Results</h2>
+
+                <div class="stats-grid">
+                    <div class="stat-card success">
+                        <div class="stat-label">Total Requests</div>
+                        <div class="stat-value" id="totalRequests">0</div>
+                    </div>
+                    <div class="stat-card danger">
+                        <div class="stat-label">Threats Detected</div>
+                        <div class="stat-value" id="threatsDetected">0</div>
+                    </div>
+                    <div class="stat-card warning">
+                        <div class="stat-label">Threat Percentage</div>
+                        <div class="stat-value" id="threatPercentage">0%</div>
+                    </div>
+                </div>
+
+                <!-- Threat Distribution Chart -->
+                <div class="chart-container">
+                    <canvas id="threatChart"></canvas>
+                </div>
+
+                <!-- Detailed Threats -->
+                <div class="threat-list" id="threatList">
+                    <h3>🎯 Detected Threats</h3>
+                    <div id="threatItems"></div>
+                </div>
+
+                <!-- Recommendations -->
+                <div class="recommendations" id="recommendations">
+                    <h3>💡 Security Recommendations</h3>
+                    <div id="recommendationItems"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- High-Risk IPs Section -->
+        <div class="card" id="highRiskSection" style="display: none;">
+            <h2>🚨 High-Risk IP Addresses</h2>
+            <div id="highRiskIPs"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE_URL = 'http://localhost:8000';
+        let currentJobId = null;
+        let selectedFile = null;
+        let statusCheckInterval = null;
+
+        // DOM Elements
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+        const fileInfo = document.getElementById('fileInfo');
+        const fileName = document.getElementById('fileName');
+        const fileSize = document.getElementById('fileSize');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const statusSection = document.getElementById('statusSection');
+        const resultsSection = document.getElementById('resultsSection');
+        const jobIdSpan = document.getElementById('jobId');
+        const statusMessage = document.getElementById('statusMessage');
+        const progressFill = document.getElementById('progressFill');
+        const errorMessage = document.getElementById('errorMessage');
+
+        // Upload Area Events
+        uploadArea.addEventListener('click', () => fileInput.click());
+
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleFileSelect(files[0]);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFileSelect(e.target.files[0]);
+            }
+        });
+
+        // Handle File Selection
+        function handleFileSelect(file) {
+            selectedFile = file;
+            fileName.textContent = file.name;
+            fileSize.textContent = formatFileSize(file.size);
+            fileInfo.classList.add('active');
+            uploadBtn.disabled = false;
+            hideError();
+        }
+
+        // Format File Size
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+        }
+
+        // Show error
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorMessage.classList.add('active');
+        }
+
+        function hideError() {
+            errorMessage.classList.remove('active');
+        }
+
+        // Upload Button Click
+        uploadBtn.addEventListener('click', async () => {
+            if (!selectedFile) return;
+
+            uploadBtn.disabled = true;
+            statusSection.classList.add('active');
+            resultsSection.classList.remove('active');
+            progressFill.style.width = '30%';
+            statusMessage.textContent = 'Uploading file...';
+            hideError();
+
+            try {
+                const formData = new FormData();
+                formData.append('file', selectedFile);
+
+                console.log('Uploading to:', `${API_BASE_URL}/api/upload`);
+
+                const response = await fetch(`${API_BASE_URL}/api/upload`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Upload failed: ${response.status} ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                currentJobId = data.job_id;
+                jobIdSpan.textContent = currentJobId;
+
+                progressFill.style.width = '60%';
+                statusMessage.textContent = 'Processing log file...';
+
+                // Start checking status
+                checkJobStatus();
+            } catch (error) {
+                console.error('Error:', error);
+                showError(`Error uploading file: ${error.message}`);
+                uploadBtn.disabled = false;
+                statusSection.classList.remove('active');
+            }
+        });
+
+        // Check Job Status
+        function checkJobStatus() {
+            statusCheckInterval = setInterval(async () => {
+                try {
+                    const response = await fetch(`${API_BASE_URL}/api/status/${currentJobId}`);
+
+                    if (!response.ok) {
+                        throw new Error(`Status check failed: ${response.status}`);
+                    }
+
+                    const status = await response.json();
+
+                    statusMessage.textContent = status.message;
+
+                    if (status.status === 'completed') {
+                        clearInterval(statusCheckInterval);
+                        progressFill.style.width = '100%';
+                        setTimeout(() => {
+                            statusSection.classList.remove('active');
+                            fetchResults();
+                        }, 1000);
+                    } else if (status.status === 'error') {
+                        clearInterval(statusCheckInterval);
+                        showError(`Processing error: ${status.message}`);
+                        statusSection.classList.remove('active');
+                        uploadBtn.disabled = false;
+                    }
+                } catch (error) {
+                    console.error('Error checking status:', error);
+                }
+            }, 2000);
+        }
+
+        // Fetch and Display Results
+        async function fetchResults() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/predict/${currentJobId}`);
+
+                if (!response.ok) {
+                    throw new Error(`Could not fetch results: ${response.status}`);
+                }
+
+                const results = await response.json();
+                displayResults(results);
+            } catch (error) {
+                console.error('Error:', error);
+                showError(`Error fetching results: ${error.message}`);
+                uploadBtn.disabled = false;
+            }
+        }
+
+        // Display Results
+        function displayResults(results) {
+            const summary = results.summary;
+
+            // Update Statistics
+            document.getElementById('totalRequests').textContent = summary.total_requests.toLocaleString();
+
+            const totalThreats = summary.ddos_threats + summary.brute_force_threats +
+                summary.xss_threats + summary.sql_injection_threats;
+            document.getElementById('threatsDetected').textContent = totalThreats.toLocaleString();
+            document.getElementById('threatPercentage').textContent = summary.threat_percentage.toFixed(1) + '%';
+
+            // Display Threat Chart
+            displayThreatChart(summary);
+
+            // Display Detailed Threats
+            displayDetailedThreats(results.detailed_predictions);
+
+            // Display Recommendations
+            displayRecommendations(results.recommendations);
+
+            // Display High-Risk IPs
+            if (summary.high_risk_ips && summary.high_risk_ips.length > 0) {
+                displayHighRiskIPs(summary.high_risk_ips);
+            }
+
+            // Show results section
+            resultsSection.classList.add('active');
+            uploadBtn.disabled = false;
+        }
+
+        // Display Threat Distribution Chart
+        function displayThreatChart(summary) {
+            const ctx = document.getElementById('threatChart').getContext('2d');
+
+            // Destroy existing chart if any
+            if (window.threatChart && typeof window.threatChart.destroy === 'function') {
+                window.threatChart.destroy();
+            }
+
+            window.threatChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Normal Traffic', 'DDoS', 'Brute Force', 'XSS', 'SQL Injection'],
+                    datasets: [{
+                        data: [
+                            summary.normal_traffic,
+                            summary.ddos_threats,
+                            summary.brute_force_threats,
+                            summary.xss_threats,
+                            summary.sql_injection_threats
+                        ],
+                        backgroundColor: [
+                            '#4caf50',
+                            '#f44336',
+                            '#ff9800',
+                            '#9c27b0',
+                            '#e91e63'
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom'
+                        },
+                        title: {
+                            display: true,
+                            text: 'Threat Distribution',
+                            font: {
+                                size: 16
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Display Detailed Threats
+        function displayDetailedThreats(predictions) {
+            const threatItems = document.getElementById('threatItems');
+            threatItems.innerHTML = '';
+
+            // Filter only threats (not normal)
+            const threats = predictions.filter(p => p.predicted_threat !== 'normal');
+
+            if (threats.length === 0) {
+                threatItems.innerHTML = '<p style="color: #4caf50; font-weight: 600;">✓ No threats detected</p>';
+                return;
+            }
+
+            threats.slice(0, 10).forEach(threat => {
+                const riskClass = threat.confidence > 0.8 ? 'high-risk' : 'medium-risk';
+                const confidenceClass = threat.confidence > 0.8 ? 'confidence-high' :
+                    threat.confidence > 0.5 ? 'confidence-medium' : 'confidence-low';
+
+                const threatItem = document.createElement('div');
+                threatItem.className = `threat-item ${riskClass}`;
+                threatItem.innerHTML = `
+                    <div class="threat-header">
+                        <span class="threat-type">${getThreatIcon(threat.predicted_threat)} ${threat.predicted_threat.toUpperCase()}</span>
+                        <span class="confidence-badge ${confidenceClass}">${(threat.confidence * 100).toFixed(1)}%</span>
+                    </div>
+                    <div style="font-size: 0.9em; color: #666;">
+                        <strong>IP:</strong> ${threat.ip}<br>
+                        <strong>Time:</strong> ${threat.timestamp}<br>
+                        <strong>URI:</strong> ${threat.uri}
+                    </div>
+                `;
+                threatItems.appendChild(threatItem);
+            });
+
+            if (threats.length > 10) {
+                const moreInfo = document.createElement('p');
+                moreInfo.style.marginTop = '10px';
+                moreInfo.style.color = '#666';
+                moreInfo.textContent = `+ ${threats.length - 10} more threats detected`;
+                threatItems.appendChild(moreInfo);
+            }
+        }
+
+        // Get Threat Icon
+        function getThreatIcon(threatType) {
+            const icons = {
+                'ddos': '🌊',
+                'brute_force': '🔨',
+                'xss': '💉',
+                'sql_injection': '💊'
+            };
+            return icons[threatType] || '⚠️';
+        }
+
+        // Display Recommendations
+        function displayRecommendations(recommendations) {
+            const recommendationItems = document.getElementById('recommendationItems');
+            recommendationItems.innerHTML = '';
+
+            recommendations.forEach(rec => {
+                const item = document.createElement('div');
+                item.className = 'recommendation-item';
+                item.textContent = rec;
+                recommendationItems.appendChild(item);
+            });
+        }
+
+        // Display High-Risk IPs
+        function displayHighRiskIPs(ips) {
+            const highRiskSection = document.getElementById('highRiskSection');
+            const highRiskIPs = document.getElementById('highRiskIPs');
+
+            highRiskIPs.innerHTML = '';
+
+            ips.forEach(ip => {
+                const ipCard = document.createElement('div');
+                ipCard.className = 'threat-item high-risk';
+                ipCard.style.marginBottom = '10px';
+                ipCard.innerHTML = `
+                    <strong>🚨 ${ip}</strong>
+                    <p style="font-size: 0.9em; color: #666; margin-top: 5px;">
+                        High volume of malicious requests detected
+                    </p>
+                `;
+                highRiskIPs.appendChild(ipCard);
+            });
+
+            highRiskSection.style.display = 'block';
+        }
+
+        // Initialize
+        console.log('Web Threat Prediction System Initialized');
+        console.log('API Base URL:', API_BASE_URL);
+    </script>
+</body>
+
+</html>
