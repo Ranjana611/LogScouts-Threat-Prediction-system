@@ -97,7 +97,7 @@ python -m http.server 3000
 2. Drag and drop your log file (CSV)
     - Expected CSV format:
         ```
-        ip,timestamp,method,uri,status,payload,refer,user_agent,label
+        ip,timestamp,method,uri,status,payload,refer,user_agent
         ```
 3. Click "Analyze Log File"
 4. Wait 2-3 minutes for processing
