@@ -1,0 +1,43 @@
+name: Deploy LogScouts
+
+on:
+  push:
+    branches:
+      - deployment
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_KEY }}
+          script: |
+            cd /home/ec2-user/LogScouts-Threat-Prediction-system
+
+            echo "Pulling latest code..."
+            git pull origin deployment
+
+            echo "Updating backend dependencies..."
+            cd backend
+            source venv/bin/activate
+            pip install -r requirements.txt
+
+            echo "Restarting backend service..."
+            sudo systemctl restart logscouts
+
+            echo "Deploying frontend..."
+            sudo rm -rf /usr/share/nginx/html/*
+            sudo cp -r ../frontend/* /usr/share/nginx/html/
+
+            echo "Restarting Nginx..."
+            sudo systemctl restart nginx
+
+            echo "Deployment completed!"
