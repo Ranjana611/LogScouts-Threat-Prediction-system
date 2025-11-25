@@ -238,37 +238,37 @@ async def health_check():
         }
     }
 
-
 @app.post("/api/upload", response_model=PredictionResponse)
 async def upload_log_file(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...)
 ):
-    """
-    Upload log file for analysis
-    Accepts CSV/TSV files with columns: ip, timestamp, method, uri, status, payload, refer, user_agent, label
-    """
-
+    print(f"📥 Upload attempt - Filename: {file.filename}")
+    print(f"📥 Content type: {file.content_type}")
+    
     # Validate file
-    if not file.filename.endswith(('.csv', '.tsv', '.txt')):
+    allowed_extensions = ('.csv', '.tsv', '.txt', '.log')
+    if not file.filename or not file.filename.endswith(allowed_extensions):
+        print(f"❌ Invalid file format: {file.filename}")
         raise HTTPException(
             status_code=400,
-            detail="Invalid file format. Please upload CSV or TSV file."
+            detail=f"Invalid file format. Please upload {', '.join(allowed_extensions)} file."
         )
-
+    
+    print(f"✅ File accepted: {file.filename}")
     # Generate unique job ID
     job_id = str(uuid.uuid4())
 
     # Save uploaded file
-    file_path = os.path.join(UPLOAD_DIR, f"{job_id}_{file.filename}")
+    original_file_path = os.path.join(UPLOAD_DIR, f"{job_id}_{file.filename}")
 
     try:
         contents = await file.read()
-        with open(file_path, 'wb') as f:
+        with open(original_file_path, 'wb') as f:
             f.write(contents)
 
         # Add processing task to background
-        background_tasks.add_task(process_log_file, job_id, file_path)
+        background_tasks.add_task(process_uploaded_file, job_id, original_file_path)
 
         return PredictionResponse(
             job_id=job_id,
@@ -283,9 +283,98 @@ async def upload_log_file(
         )
 
 
+async def process_uploaded_file(job_id: str, file_path: str):
+    """Background task to process uploaded file (convert if needed) and make predictions"""
+    
+    try:
+        save_job_status(job_id, "processing", "Checking file format...")
+        
+        # Check if file is a log file that needs conversion
+        if file_path.endswith(('.log', '.txt')):
+            save_job_status(job_id, "processing", "Converting log file to CSV...")
+            csv_file_path = await convert_log_to_csv(job_id, file_path)
+            # Process the converted CSV file
+            await process_log_file(job_id, csv_file_path)
+        else:
+            # Process directly as CSV/TSV
+            await process_log_file(job_id, file_path)
+            
+    except Exception as e:
+        print(f"✗ Error processing uploaded file {job_id}: {e}")
+        import traceback
+        traceback.print_exc()
+        save_job_status(job_id, "error", str(e))
+
+
+async def convert_log_to_csv(job_id: str, log_file_path: str) -> str:
+    """
+    Convert Apache log file to CSV format
+    """
+    import re
+    import csv
+    
+    # Define output CSV path
+    csv_file_path = os.path.join(UPLOAD_DIR, f"{job_id}_converted.csv")
+    
+    # Regex pattern to parse the log line
+    log_pattern = re.compile(
+        r'(?P<ip>\S+) - - \[(?P<timestamp>[^\]]+)\] '
+        r'"(?P<method>\S+) (?P<uri>[^ ]+) HTTP/[0-9.]+" '
+        r'(?P<status>\d+) \d+ '
+        r'"(?P<refer>[^"]*)" '
+        r'"(?P<user_agent>[^"]*)"'
+    )
+    
+    # Function to extract payload if present (query string)
+    def extract_payload(uri):
+        if "?" in uri:
+            return uri.split("?", 1)[1]
+        return ""
+    
+    # Counters for statistics
+    total_lines = 0
+    parsed_lines = 0
+    failed_lines = 0
+    
+    # Open CSV and write headers
+    with open(csv_file_path, "w", newline="", encoding="utf-8") as csvfile:
+        fieldnames = ["ip", "timestamp", "method", "uri", "status", "payload", "refer", "user_agent"]
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+        
+        with open(log_file_path, "r", encoding="utf-8") as f:
+            for line in f:
+                total_lines += 1
+                line = line.strip()
+                if not line:  # Skip empty lines
+                    continue
+                    
+                match = log_pattern.search(line)
+                if match:
+                    data = match.groupdict()
+                    data["payload"] = extract_payload(data["uri"])
+                    writer.writerow(data)
+                    parsed_lines += 1
+                else:
+                    print(f"❌ No match for line {total_lines}: {line[:100]}...")
+                    failed_lines += 1
+    
+    # Log conversion statistics
+    print(f"✓ Log conversion complete for job {job_id}")
+    print(f"  Total lines: {total_lines}")
+    print(f"  Successfully parsed: {parsed_lines}")
+    print(f"  Failed to parse: {failed_lines}")
+    print(f"  Success rate: {(parsed_lines/total_lines)*100:.2f}%")
+    
+    save_job_status(job_id, "processing", 
+                   f"Converted log file: {parsed_lines}/{total_lines} lines parsed successfully")
+    
+    return csv_file_path
+
+
 async def process_log_file(job_id: str, file_path: str):
     """Background task to process log file and make predictions"""
-
+    # ... rest of your existing process_log_file function remains exactly the same ...
     results_file = os.path.join(RESULTS_DIR, f"{job_id}_results.json")
 
     try:
@@ -424,8 +513,6 @@ async def process_log_file(job_id: str, file_path: str):
         import traceback
         traceback.print_exc()
         save_job_status(job_id, "error", str(e))
-
-
 def create_fallback_features(df, feature_columns):
     # Create features using basic methods if feature extractor is not available
     features_list = []
