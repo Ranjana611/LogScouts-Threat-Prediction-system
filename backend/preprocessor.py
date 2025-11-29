@@ -4,14 +4,13 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.utils import class_weight
 import pickle
-import json
 from datetime import datetime
 
 
 class DataPreprocessor:
     """
     Data preprocessing pipeline.
-    Handles data loading, cleaning, feature scaling, and train/test splitting
+    Handles data loading, cleaning, feature scaling, and train/test splitting.
     """
 
     def __init__(self):
@@ -22,17 +21,15 @@ class DataPreprocessor:
 
     def load_dataset(self, filepath, delimiter=None):
         """
-        Load dataset from CSV file
-        Auto-detects delimiter if not specified
+        Load dataset from CSV file.
+        Auto-detects delimiter if not specified.
         """
         try:
-            # Try to detect delimiter automatically
+            # Auto-detect delimiter
             if delimiter is None:
-                # Read first line to detect delimiter
                 with open(filepath, 'r') as f:
                     first_line = f.readline()
 
-                # Check which delimiter is present
                 if '\t' in first_line:
                     delimiter = '\t'
                     print("  Detected delimiter: TAB")
@@ -43,35 +40,27 @@ class DataPreprocessor:
                     delimiter = ','
                     print("  Using default delimiter: COMMA")
 
-            # Load with detected delimiter
             df = pd.read_csv(filepath, delimiter=delimiter, low_memory=False)
 
-            # Check if columns were parsed correctly
+            # Fallback if wrong delimiter
             if len(df.columns) == 1:
-                # Single column means wrong delimiter, try other options
                 print("  ⚠ Single column detected, trying alternative delimiters...")
-
                 for delim in ['\t', ',', ';', '|', ' ']:
                     try:
-                        df = pd.read_csv(
-                            filepath, delimiter=delim, low_memory=False)
+                        df = pd.read_csv(filepath, delimiter=delim, low_memory=False)
                         if len(df.columns) > 1:
-                            print(
-                                f"  ✓ Successfully parsed with delimiter: {repr(delim)}")
+                            print(f"  ✓ Successfully parsed with delimiter: {repr(delim)}")
                             break
-                    except:
+                    except Exception:
                         continue
 
-            print(f"✓ Dataset loaded successfully")
+            print("✓ Dataset loaded successfully")
             print(f"  Total records: {len(df):,}")
             print(f"  Columns found: {len(df.columns)}")
             print(f"  Column names: {df.columns.tolist()}\n")
 
-            # Basic validation
-            required_columns = ['ip', 'timestamp',
-                                'method', 'uri', 'status', 'label']
-            missing_columns = [
-                col for col in required_columns if col not in df.columns]
+            required_columns = ['ip', 'timestamp', 'method', 'uri', 'status', 'label']
+            missing_columns = [col for col in required_columns if col not in df.columns]
 
             if missing_columns:
                 print(f"⚠ Warning: Missing columns: {missing_columns}")
@@ -85,15 +74,13 @@ class DataPreprocessor:
             return None
 
     def analyze_dataset(self, df):
-        """Perform exploratory analysis on the dataset"""
-        print("\n" + "="*60)
+        """Perform exploratory analysis on the dataset."""
+        print("\n" + "=" * 60)
         print("DATASET ANALYSIS")
-        print("="*60)
+        print("=" * 60)
 
-        # Basic statistics
         print(f"\nDataset Shape: {df.shape[0]} rows × {df.shape[1]} columns")
-        print(
-            f"Memory Usage: {df.memory_usage(deep=True).sum() / 1024**2:.2f} MB")
+        print(f"Memory Usage: {df.memory_usage(deep=True).sum() / 1024**2:.2f} MB")
 
         # Label distribution
         print("\n--- Label Distribution ---")
@@ -102,18 +89,16 @@ class DataPreprocessor:
             percentage = (count / len(df)) * 100
             print(f"{label:20s}: {count:6d} ({percentage:5.2f}%)")
 
-        # Check for class imbalance
         max_class = label_counts.max()
         min_class = label_counts.min()
-        imbalance_ratio = max_class / \
-            min_class if min_class > 0 else float('inf')
+        imbalance_ratio = max_class / min_class if min_class > 0 else float('inf')
         print(f"\nClass Imbalance Ratio: {imbalance_ratio:.2f}:1")
 
         if imbalance_ratio > 3:
             print("Warning: Significant class imbalance detected!")
             print("  Recommendation: Consider using class weights or SMOTE")
 
-        # Time span analysis
+        # Temporal coverage
         print("\n--- Temporal Coverage ---")
         try:
             df['temp_timestamp'] = pd.to_datetime(
@@ -122,27 +107,27 @@ class DataPreprocessor:
             )
             print(f"Start Date: {df['temp_timestamp'].min()}")
             print(f"End Date:   {df['temp_timestamp'].max()}")
-            print(
-                f"Time Span:  {(df['temp_timestamp'].max() - df['temp_timestamp'].min()).days} days")
+            span_days = (df['temp_timestamp'].max() - df['temp_timestamp'].min()).days
+            print(f"Time Span:  {span_days} days")
             df.drop('temp_timestamp', axis=1, inplace=True)
-        except:
+        except Exception:
             print("Unable to parse timestamps")
 
-        # IP statistics
+        # IP stats
         print("\n--- IP Address Statistics ---")
         print(f"Unique IPs: {df['ip'].nunique():,}")
-        print(f"Top 5 Most Active IPs:")
+        print("Top 5 Most Active IPs:")
         top_ips = df['ip'].value_counts().head()
         for ip, count in top_ips.items():
             print(f"  {ip}: {count:,} requests")
 
-        # HTTP Method distribution
+        # HTTP methods
         print("\n--- HTTP Methods ---")
         method_counts = df['method'].value_counts()
         for method, count in method_counts.items():
             print(f"{method}: {count:,}")
 
-        # Status code distribution
+        # Status codes
         print("\n--- Status Codes ---")
         status_counts = df['status'].value_counts().sort_index()
         for status, count in status_counts.head(10).items():
@@ -157,7 +142,7 @@ class DataPreprocessor:
         else:
             print("No missing values detected ✓")
 
-        print("\n" + "="*60 + "\n")
+        print("\n" + "=" * 60 + "\n")
 
         return {
             'total_records': len(df),
@@ -167,15 +152,15 @@ class DataPreprocessor:
         }
 
     def clean_data(self, df):
-        """Clean and prepare data for feature extraction"""
+        """Clean and prepare data for feature extraction."""
         print("Cleaning data...")
 
         df_clean = df.copy()
 
-        # Handle missing values
-        df_clean['payload'] = df_clean['payload'].fillna('-')
-        df_clean['refer'] = df_clean['refer'].fillna('-')
-        df_clean['user_agent'] = df_clean['user_agent'].fillna('-')
+        # Handle missing text fields
+        df_clean['payload'] = df_clean.get('payload', pd.Series(index=df_clean.index)).fillna('-')
+        df_clean['refer'] = df_clean.get('refer', pd.Series(index=df_clean.index)).fillna('-')
+        df_clean['user_agent'] = df_clean.get('user_agent', pd.Series(index=df_clean.index)).fillna('-')
 
         # Remove duplicates
         initial_count = len(df_clean)
@@ -184,8 +169,9 @@ class DataPreprocessor:
         if removed > 0:
             print(f"  Removed {removed} duplicate records")
 
-        # Validate status codes
-        df_clean = df_clean[df_clean['status'].between(100, 599)]
+        # Valid status codes
+        if 'status' in df_clean.columns:
+            df_clean = df_clean[df_clean['status'].between(100, 599)]
 
         # Remove records with invalid timestamps
         df_clean = df_clean[df_clean['timestamp'].notna()]
@@ -196,47 +182,53 @@ class DataPreprocessor:
 
     def prepare_features(self, feature_matrix, is_training=True):
         """
-        Prepare features for machine learning
+        Prepare features for machine learning.
         - Encode categorical variables
         - Scale numerical features
         - Handle infinite values
+        Returns:
+            prepared_df: full feature matrix including label/metadata
+            feature_cols: list of model input feature names
         """
         print("Preparing features for ML...")
 
         df = feature_matrix.copy()
 
-        # Identify feature columns (exclude metadata and label)
+        # Exclude metadata and label from model features
         metadata_cols = ['ip', 'timestamp', 'label', 'dvwa_module']
         feature_cols = [col for col in df.columns if col not in metadata_cols]
 
         if is_training:
             self.feature_columns = feature_cols
 
-        # Encode categorical features
+        # Categorical features
         categorical_features = df[feature_cols].select_dtypes(
-            include=['object', 'bool']).columns
+            include=['object', 'bool']
+        ).columns
 
         for col in categorical_features:
             if is_training:
-                # Create mapping for training
                 unique_values = df[col].unique()
                 self.categorical_mappings[col] = {
-                    val: idx for idx, val in enumerate(unique_values)}
+                    val: idx for idx, val in enumerate(unique_values)
+                }
 
-            # Apply mapping
             df[col] = df[col].map(
-                self.categorical_mappings[col]).fillna(-1).astype(int)
+                self.categorical_mappings[col]
+            ).fillna(-1).astype(int)
 
-        # Handle infinite values
+        # Handle infinities
         df[feature_cols] = df[feature_cols].replace([np.inf, -np.inf], np.nan)
 
-        # Fill NaN values with median (for numerical features)
+        # Fill NaN values with median for numeric features
         numerical_features = df[feature_cols].select_dtypes(
-            include=[np.number]).columns
+            include=[np.number]
+        ).columns
         df[numerical_features] = df[numerical_features].fillna(
-            df[numerical_features].median())
+            df[numerical_features].median()
+        )
 
-        # Scale features
+        # Scale numeric features (works fine with GradientBoostingClassifier)
         if is_training:
             df[feature_cols] = self.scaler.fit_transform(df[feature_cols])
         else:
@@ -247,11 +239,10 @@ class DataPreprocessor:
         return df, feature_cols
 
     def encode_labels(self, labels, is_training=True):
-        """Encode threat labels to numerical format"""
+        """Encode threat labels to numerical format."""
         if is_training:
             encoded_labels = self.label_encoder.fit_transform(labels)
-            print(
-                f"✓ Label encoding: {len(self.label_encoder.classes_)} classes")
+            print(f"✓ Label encoding: {len(self.label_encoder.classes_)} classes")
             print(f"  Classes: {list(self.label_encoder.classes_)}")
         else:
             encoded_labels = self.label_encoder.transform(labels)
@@ -260,42 +251,38 @@ class DataPreprocessor:
 
     def split_dataset(self, X, y, test_size=0.2, val_size=0.1, random_state=42):
         """
-        Split dataset into training, validation, and test sets
-        Maintains temporal order for time-series aware splitting
+        Split dataset into training, validation, and test sets.
+        Stratified splits to preserve label distribution.
         """
-        print(f"\nSplitting dataset...")
+        print("\nSplitting dataset...")
 
-        # First split: separate test set
+        # First: train+val vs test
         X_temp, X_test, y_temp, y_test = train_test_split(
             X, y, test_size=test_size, random_state=random_state, stratify=y
         )
 
-        # Second split: separate validation from training
+        # Second: train vs val
         val_size_adjusted = val_size / (1 - test_size)
         X_train, X_val, y_train, y_val = train_test_split(
             X_temp, y_temp, test_size=val_size_adjusted,
             random_state=random_state, stratify=y_temp
         )
 
-        print(f"✓ Dataset split complete:")
-        print(
-            f"  Training:   {len(X_train):6,} samples ({len(X_train)/len(X)*100:.1f}%)")
-        print(
-            f"  Validation: {len(X_val):6,} samples ({len(X_val)/len(X)*100:.1f}%)")
-        print(
-            f"  Testing:    {len(X_test):6,} samples ({len(X_test)/len(X)*100:.1f}%)")
+        print("✓ Dataset split complete:")
+        print(f"  Training:   {len(X_train):6,} samples ({len(X_train)/len(X)*100:.1f}%)")
+        print(f"  Validation: {len(X_val):6,} samples ({len(X_val)/len(X)*100:.1f}%)")
+        print(f"  Testing:    {len(X_test):6,} samples ({len(X_test)/len(X)*100:.1f}%)")
 
         return X_train, X_val, X_test, y_train, y_val, y_test
 
     def calculate_class_weights(self, y):
-        """Calculate class weights to handle imbalanced datasets"""
+        """Calculate class weights to handle imbalanced datasets."""
         classes = np.unique(y)
         weights = class_weight.compute_class_weight(
             'balanced',
             classes=classes,
             y=y
         )
-
         class_weight_dict = dict(zip(classes, weights))
 
         print("\n--- Class Weights ---")
@@ -306,7 +293,7 @@ class DataPreprocessor:
         return class_weight_dict
 
     def save_preprocessor(self, filepath='preprocessor.pkl'):
-        """Save preprocessor state for later use"""
+        """Save preprocessor state for later use."""
         preprocessor_data = {
             'scaler': self.scaler,
             'label_encoder': self.label_encoder,
@@ -320,7 +307,7 @@ class DataPreprocessor:
         print(f"✓ Preprocessor saved to {filepath}")
 
     def load_preprocessor(self, filepath='preprocessor.pkl'):
-        """Load preprocessor state"""
+        """Load preprocessor state."""
         with open(filepath, 'rb') as f:
             preprocessor_data = pickle.load(f)
 
@@ -331,19 +318,16 @@ class DataPreprocessor:
 
         print(f"✓ Preprocessor loaded from {filepath}")
 
-# Complete preprocessing workflow
-
 
 def preprocessing_workflow(data_filepath, feature_extractor):
     """
-    Complete data preprocessing workflow
-    Returns prepared data ready for ML training
+    Complete data preprocessing workflow.
+    Returns prepared data ready for ML training (e.g., GradientBoostingClassifier).
     """
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("DATA PREPROCESSING WORKFLOW")
-    print("="*60 + "\n")
+    print("=" * 60 + "\n")
 
-    # Initialize preprocessor
     preprocessor = DataPreprocessor()
 
     # Step 1: Load dataset
@@ -360,7 +344,7 @@ def preprocessing_workflow(data_filepath, feature_extractor):
     print("\nStep 3: Cleaning data...")
     df_clean = preprocessor.clean_data(df)
 
-    # Step 4: Extract features
+    # Step 4: Extract features (your ThreatFeatureExtractor should include engineered features)
     print("\nStep 4: Extracting features...")
     feature_matrix = feature_extractor.create_feature_matrix(df_clean)
 
@@ -373,15 +357,17 @@ def preprocessing_workflow(data_filepath, feature_extractor):
     # Step 6: Encode labels
     print("\nStep 6: Encoding labels...")
     y = preprocessor.encode_labels(
-        feature_matrix_prepared['label'], is_training=True)
+        feature_matrix_prepared['label'], is_training=True
+    )
     X = feature_matrix_prepared[feature_cols].values
 
     # Step 7: Split dataset
     print("\nStep 7: Splitting dataset...")
     X_train, X_val, X_test, y_train, y_val, y_test = preprocessor.split_dataset(
-        X, y)
+        X, y
+    )
 
-    # Step 8: Calculate class weights
+    # Step 8: Calculate class weights (optional but useful for imbalance)
     print("\nStep 8: Calculating class weights...")
     class_weights = preprocessor.calculate_class_weights(y_train)
 
@@ -389,9 +375,9 @@ def preprocessing_workflow(data_filepath, feature_extractor):
     print("\nStep 9: Saving preprocessor...")
     preprocessor.save_preprocessor()
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("PREPROCESSING COMPLETE!")
-    print("="*60 + "\n")
+    print("=" * 60 + "\n")
 
     return {
         'X_train': X_train,
@@ -407,7 +393,6 @@ def preprocessing_workflow(data_filepath, feature_extractor):
     }
 
 
-# Example usage
 if __name__ == "__main__":
     print("Data Preprocessing Pipeline Ready!")
     print("\nUsage:")
