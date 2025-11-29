@@ -5,13 +5,18 @@ from datetime import datetime, timedelta
 from urllib.parse import urlparse, parse_qs, unquote
 from collections import Counter
 import warnings
+
 warnings.filterwarnings('ignore')
 
 
 class ThreatFeatureExtractor:
     """
-    Feature extraction pipeline
-    DDoS, Brute Force, XSS, SQL Injection detection
+    Feature extraction pipeline for:
+    - DDoS / high-rate traffic
+    - Brute force / auth abuse
+    - XSS
+    - SQL Injection
+    Produces a numeric-friendly feature matrix for Gradient Boosting.
     """
 
     def __init__(self):
@@ -20,7 +25,8 @@ class ThreatFeatureExtractor:
             r'union\s+select', r'select\s+.*\s+from', r'insert\s+into',
             r'drop\s+table', r'delete\s+from', r'update\s+.*\s+set',
             r'or\s+1\s*=\s*1', r'and\s+1\s*=\s*1', r"'\s*or\s*'",
-            r'@@version', r'information_schema', r'sleep\s*\(', r'benchmark\s*\('
+            r'@@version', r'information_schema', r'sleep\s*\(',
+            r'benchmark\s*\('
         ]
 
         # XSS patterns
@@ -41,43 +47,48 @@ class ThreatFeatureExtractor:
         ]
 
     def parse_timestamp(self, timestamp_str):
-        """Parse Apache timestamp to datetime object"""
+        """Parse Apache timestamp to naive datetime object."""
         try:
-            # Remove timezone info for simplicity
-            clean_ts = timestamp_str.split(' ')[0]
+            # Example: 01/Mar/2025:00:00:11 -0400 -> keep first part
+            clean_ts = str(timestamp_str).split(' ')[0]
             return datetime.strptime(clean_ts, '%d/%b/%Y:%H:%M:%S')
-        except:
+        except Exception:
             return None
 
     def extract_url_features(self, uri, payload):
-        """Extract URL and payload based features"""
+        """Extract URL and payload-based features."""
         features = {}
 
+        uri = uri if isinstance(uri, str) else ''
+        payload = payload if isinstance(payload, str) else '-'
+
         # Basic URL analysis
-        features['url_length'] = len(uri) if uri else 0
-        features['has_parameters'] = '?' in uri if uri else False
+        features['url_length'] = len(uri)
+        features['has_parameters'] = int('?' in uri)
         features['param_count'] = uri.count('&') + 1 if '?' in uri else 0
 
         # Path analysis
-        path = uri.split('?')[0] if uri else ""
-        features['path_depth'] = path.count('/') - 1
-        features['is_static_resource'] = any(
-            path.endswith(ext) for ext in self.static_extensions)
-        features['is_auth_endpoint'] = any(
-            endpoint in path.lower() for endpoint in self.auth_endpoints)
+        path = uri.split('?', 1)[0]
+        features['path_depth'] = max(path.count('/') - 1, 0)
+        features['is_static_resource'] = int(
+            any(path.lower().endswith(ext) for ext in self.static_extensions)
+        )
+        features['is_auth_endpoint'] = int(
+            any(endpoint in path.lower() for endpoint in self.auth_endpoints)
+        )
 
-        # DVWA specific features
-        features['is_dvwa_vulnerability'] = '/vulnerabilities/' in path
-        #features['dvwa_module'] = self._extract_dvwa_module(path)
+        # DVWA-specific
+        features['is_dvwa_vulnerability'] = int('/vulnerabilities/' in path)
+        features['dvwa_module'] = self._extract_dvwa_module(path)
 
-        # Payload analysis
+        # Payload analysis over URI + payload
         combined_payload = f"{uri} {payload}" if payload and payload != '-' else uri
         features.update(self._extract_payload_features(combined_payload))
 
         return features
 
     def _extract_dvwa_module(self, path):
-        """Extract DVWA vulnerability module"""
+        """Extract DVWA vulnerability module name."""
         if '/vulnerabilities/' in path:
             parts = path.split('/vulnerabilities/')
             if len(parts) > 1:
@@ -86,58 +97,60 @@ class ThreatFeatureExtractor:
         return 'none'
 
     def _extract_payload_features(self, payload_text):
-        """Extract features from payload/parameters"""
-        features = {}
-
+        """Extract SQLi/XSS and complexity features from payload."""
         if not payload_text or payload_text == '-':
             return {
                 'sql_injection_score': 0,
                 'xss_score': 0,
-                'payload_entropy': 0,
+                'payload_entropy': 0.0,
                 'special_chars_count': 0,
-                'encoded_payload': False
+                'encoded_payload': 0
             }
 
-        payload_lower = payload_text.lower()
+        features = {}
+        payload_lower = str(payload_text).lower()
 
-        # SQL injection detection
-        sql_score = sum(1 for pattern in self.sql_patterns
-                        if re.search(pattern, payload_lower, re.IGNORECASE))
+        # SQL injection pattern hits
+        sql_score = sum(
+            1 for pattern in self.sql_patterns
+            if re.search(pattern, payload_lower, re.IGNORECASE)
+        )
         features['sql_injection_score'] = sql_score
 
-        # XSS detection
-        xss_score = sum(1 for pattern in self.xss_patterns
-                        if re.search(pattern, payload_lower, re.IGNORECASE))
+        # XSS pattern hits
+        xss_score = sum(
+            1 for pattern in self.xss_patterns
+            if re.search(pattern, payload_lower, re.IGNORECASE)
+        )
         features['xss_score'] = xss_score
 
-        # Payload complexity
+        # Complexity and encoding
         features['payload_entropy'] = self._calculate_entropy(payload_text)
         features['special_chars_count'] = len(
-            re.findall(r'[<>"\'\(\)&=]', payload_text))
-        features['encoded_payload'] = '%' in payload_text
+            re.findall(r'[<>"\'\(\)&=]', payload_text)
+        )
+        features['encoded_payload'] = int('%' in payload_text)
 
         return features
 
     def _calculate_entropy(self, text):
-        """Calculate Shannon entropy of text"""
+        """Calculate Shannon entropy of a string."""
         if not text:
-            return 0
+            return 0.0
 
         counter = Counter(text)
         length = len(text)
-        entropy = 0
+        entropy = 0.0
 
         for count in counter.values():
             p = count / length
             if p > 0:
                 entropy -= p * np.log2(p)
 
-        return entropy
+        return float(entropy)
 
     def extract_temporal_features(self, df, column_mapping=None, window_minutes=5):
-        """Extract time-based features for DDoS and brute force detection"""
-
-        # Handle column mapping
+        """Extract time-based features for DDoS and brute-force behaviour."""
         if column_mapping is None:
             ts_col = 'timestamp'
             ip_col = 'ip'
@@ -151,10 +164,8 @@ class ThreatFeatureExtractor:
 
         df = df.copy()
 
-        # Check if columns exist
         if ts_col not in df.columns:
-            print(
-                f"⚠️  Timestamp column '{ts_col}' not found, skipping temporal features")
+            print(f"⚠️  Timestamp column '{ts_col}' not found, skipping temporal features")
             return pd.DataFrame(index=df.index)
 
         df['parsed_timestamp'] = df[ts_col].apply(self.parse_timestamp)
@@ -165,12 +176,11 @@ class ThreatFeatureExtractor:
         for idx, row in df.iterrows():
             features = {}
             current_time = row['parsed_timestamp']
-            current_ip = row['ip']
+            current_ip = row[ip_col] if ip_col in df.columns else None
 
-            # Define time windows
             window_start = current_time - timedelta(minutes=window_minutes)
 
-            # Filter data in time window
+            # Window slice
             window_data = df[
                 (df['parsed_timestamp'] >= window_start) &
                 (df['parsed_timestamp'] <= current_time)
@@ -178,77 +188,100 @@ class ThreatFeatureExtractor:
 
             # Overall request patterns
             features['requests_in_window'] = len(window_data)
-            features['unique_ips_in_window'] = window_data['ip'].nunique()
-            features['requests_per_ip_avg'] = len(
-                window_data) / max(1, window_data['ip'].nunique())
+            features['unique_ips_in_window'] = window_data[ip_col].nunique() if ip_col in window_data.columns else 0
+            denom_ip = max(1, features['unique_ips_in_window'])
+            features['requests_per_ip_avg'] = len(window_data) / denom_ip
 
-            # Current IP behavior
-            ip_data = window_data[window_data['ip'] == current_ip]
+            # Current IP behaviour
+            if current_ip is not None and ip_col in window_data.columns:
+                ip_data = window_data[window_data[ip_col] == current_ip]
+            else:
+                ip_data = window_data.iloc[0:0]  # empty
+
             features['requests_from_current_ip'] = len(ip_data)
-            features['error_rate_current_ip'] = (
-                ip_data['status'] >= 400).mean()
 
-            # Request frequency analysis
+            if status_col in ip_data.columns and len(ip_data) > 0:
+                features['error_rate_current_ip'] = (ip_data[status_col] >= 400).mean()
+            else:
+                features['error_rate_current_ip'] = 0.0
+
+            # Request frequency
             if len(ip_data) > 1:
-                time_diffs = ip_data['parsed_timestamp'].diff(
-                ).dt.total_seconds().dropna()
+                time_diffs = ip_data['parsed_timestamp'].diff().dt.total_seconds().dropna()
                 features['avg_request_interval'] = time_diffs.mean()
                 features['min_request_interval'] = time_diffs.min()
             else:
                 features['avg_request_interval'] = float('inf')
                 features['min_request_interval'] = float('inf')
 
-            # Authentication attempts
-            auth_requests = ip_data[ip_data.apply(
-                lambda x: any(endpoint in str(x['uri']).lower()
-                              for endpoint in self.auth_endpoints), axis=1
-            )]
-            features['auth_requests_in_window'] = len(auth_requests)
-            features['failed_auth_rate'] = (auth_requests['status'].isin(
-                [401, 403, 302])).mean() if len(auth_requests) > 0 else 0
+            # Auth attempts in window
+            if uri_col in ip_data.columns:
+                auth_requests = ip_data[
+                    ip_data[uri_col].astype(str).str.lower().apply(
+                        lambda u: any(endpoint in u for endpoint in self.auth_endpoints)
+                    )
+                ]
+                features['auth_requests_in_window'] = len(auth_requests)
+                if status_col in auth_requests.columns and len(auth_requests) > 0:
+                    features['failed_auth_rate'] = auth_requests[status_col].isin(
+                        [401, 403, 302]
+                    ).mean()
+                else:
+                    features['failed_auth_rate'] = 0.0
+            else:
+                features['auth_requests_in_window'] = 0
+                features['failed_auth_rate'] = 0.0
 
-            # Resource access patterns
-            features['static_resource_ratio'] = ip_data.apply(
-                lambda x: any(str(x['uri']).endswith(ext) for ext in self.static_extensions), axis=1
-            ).mean()
+            # Static resource ratio
+            if uri_col in ip_data.columns and len(ip_data) > 0:
+                static_flags = ip_data[uri_col].astype(str).apply(
+                    lambda u: any(u.lower().endswith(ext) for ext in self.static_extensions)
+                )
+                features['static_resource_ratio'] = static_flags.mean()
+            else:
+                features['static_resource_ratio'] = 0.0
 
-            # DVWA vulnerability access
-            vuln_requests = ip_data[ip_data['uri'].str.contains(
-                '/vulnerabilities/', na=False)]
-            features['vulnerability_requests'] = len(vuln_requests)
+            # DVWA vulnerability access count
+            if uri_col in ip_data.columns:
+                vuln_requests = ip_data[uri_col].astype(str).str.contains(
+                    '/vulnerabilities/', na=False
+                )
+                features['vulnerability_requests'] = vuln_requests.sum()
+            else:
+                features['vulnerability_requests'] = 0
 
             temporal_features.append(features)
 
-        return pd.DataFrame(temporal_features)
+        temporal_df = pd.DataFrame(temporal_features, index=df.index)
+        return temporal_df
 
     def extract_user_agent_features(self, user_agent):
-        """Extract features from user agent string"""
-        features = {}
-
+        """Extract features from the User-Agent string."""
         if not user_agent or user_agent == '-':
             return {
                 'ua_length': 0,
-                'is_bot': False,
-                'is_automated_tool': False,
+                'is_bot': 0,
+                'is_automated_tool': 0,
                 'browser_diversity': 0
             }
 
-        ua_lower = user_agent.lower()
+        features = {}
+        ua = str(user_agent)
+        ua_lower = ua.lower()
 
-        # Basic metrics
-        features['ua_length'] = len(user_agent)
+        features['ua_length'] = len(ua)
 
         # Bot detection
         bot_indicators = ['bot', 'crawler', 'spider', 'scraper']
-        features['is_bot'] = any(
-            indicator in ua_lower for indicator in bot_indicators)
+        features['is_bot'] = int(any(ind in ua_lower for ind in bot_indicators))
 
-        # Automated tool detection
+        # Automated tools
         tool_indicators = ['curl', 'wget', 'python', 'sqlmap', 'nmap', 'nikto']
-        features['is_automated_tool'] = any(
-            tool in ua_lower for tool in tool_indicators)
+        features['is_automated_tool'] = int(
+            any(tool in ua_lower for tool in tool_indicators)
+        )
 
-        # Browser information
+        # Browser presence count
         browsers = ['chrome', 'firefox', 'safari', 'edge', 'opera']
         browser_count = sum(1 for browser in browsers if browser in ua_lower)
         features['browser_diversity'] = browser_count
@@ -256,99 +289,114 @@ class ThreatFeatureExtractor:
         return features
 
     def create_feature_matrix(self, df):
-        
+        """
+        Create the full feature matrix:
+        - base columns: ip, timestamp, method, status, label
+        - URL/payload features
+        - user-agent features
+        - temporal behaviour features
+        """
         print("Extracting URL and payload features...")
 
-        # Handle different column name variations
-        # Some CSVs might have different column names
+        # Column mapping to handle different datasets
         column_mapping = {
             'uri': ['uri', 'url', 'request', 'path'],
             'payload': ['payload', 'data', 'body'],
             'user_agent': ['user_agent', 'user-agent', 'useragent', 'ua'],
             'method': ['method', 'http_method'],
             'status': ['status', 'status_code', 'http_status'],
-            'ip': ['ip', 'client_ip', 'remote_addr']
+            'ip': ['ip', 'client_ip', 'remote_addr'],
+            'timestamp': ['timestamp', 'time', 'datetime']
         }
 
-        # Map columns
         mapped_cols = {}
         for standard_name, variations in column_mapping.items():
+            mapped_cols[standard_name] = None
             for variation in variations:
                 if variation in df.columns:
                     mapped_cols[standard_name] = variation
                     break
-            if standard_name not in mapped_cols:
+            if mapped_cols[standard_name] is None:
                 print(f"⚠️  Warning: '{standard_name}' column not found")
-                mapped_cols[standard_name] = None
 
         print(f"Column mapping: {mapped_cols}\n")
 
         url_features_list = []
         ua_features_list = []
 
-        for idx, row in df.iterrows():
-            # Get values with fallback
+        for _, row in df.iterrows():
             uri = row.get(mapped_cols['uri'], '') if mapped_cols['uri'] else ''
-            payload = row.get(mapped_cols['payload'],
-                            '-') if mapped_cols['payload'] else '-'
-            user_agent = row.get(
-                mapped_cols['user_agent'], '') if mapped_cols['user_agent'] else ''
+            payload = row.get(mapped_cols['payload'], '-') if mapped_cols['payload'] else '-'
+            user_agent = row.get(mapped_cols['user_agent'], '-') if mapped_cols['user_agent'] else '-'
 
-            # URL features
             url_feats = self.extract_url_features(uri, payload)
             url_features_list.append(url_feats)
 
-            # User agent features
             ua_feats = self.extract_user_agent_features(user_agent)
             ua_features_list.append(ua_feats)
 
-        # Convert to DataFrames
-        url_features_df = pd.DataFrame(url_features_list)
-        ua_features_df = pd.DataFrame(ua_features_list)
+        url_features_df = pd.DataFrame(url_features_list, index=df.index)
+        ua_features_df = pd.DataFrame(ua_features_list, index=df.index)
 
         print("Extracting temporal features...")
         temporal_features_df = self.extract_temporal_features(df, mapped_cols)
 
-        # Combine all features
         print("Combining feature sets...")
 
-        # Get base columns that exist
+        # Base columns preserved for context / label
         base_cols = []
         for col in ['ip', 'timestamp', 'method', 'status', 'label']:
             if col in df.columns:
                 base_cols.append(col)
-            elif mapped_cols.get(col) and mapped_cols[col] in df.columns:
-                base_cols.append(mapped_cols[col])
+            else:
+                # Fallback to mapped variant
+                mapped = mapped_cols.get(col)
+                if mapped and mapped in df.columns:
+                    base_cols.append(mapped)
 
-        feature_matrix = pd.concat([
-            df[base_cols].reset_index(drop=True),
-            url_features_df.reset_index(drop=True),
-            ua_features_df.reset_index(drop=True),
-            temporal_features_df.reset_index(drop=True)
-        ], axis=1)
+        base_df = df[base_cols].copy()
 
-        # Add basic statistical features
+        feature_matrix = pd.concat(
+            [
+                base_df.reset_index(drop=True),
+                url_features_df.reset_index(drop=True),
+                ua_features_df.reset_index(drop=True),
+                temporal_features_df.reset_index(drop=True)
+            ],
+            axis=1
+        )
+
+        # Basic status/method derived features
         if 'status' in feature_matrix.columns:
             feature_matrix['status_class'] = feature_matrix['status'] // 100
             feature_matrix['is_error'] = feature_matrix['status'] >= 400
-        elif mapped_cols['status'] in feature_matrix.columns:
-            feature_matrix['status_class'] = feature_matrix[mapped_cols['status']] // 100
-            feature_matrix['is_error'] = feature_matrix[mapped_cols['status']] >= 400
+        elif mapped_cols['status'] and mapped_cols['status'] in feature_matrix.columns:
+            col = mapped_cols['status']
+            feature_matrix['status_class'] = feature_matrix[col] // 100
+            feature_matrix['is_error'] = feature_matrix[col] >= 400
 
         if 'method' in feature_matrix.columns:
-            feature_matrix['is_post_request'] = feature_matrix['method'] == 'POST'
-        elif mapped_cols['method'] in feature_matrix.columns:
-            feature_matrix['is_post_request'] = feature_matrix[mapped_cols['method']] == 'POST'
+            feature_matrix['is_post_request'] = feature_matrix['method'].astype(str) == 'POST'
+        elif mapped_cols['method'] and mapped_cols['method'] in feature_matrix.columns:
+            col = mapped_cols['method']
+            feature_matrix['is_post_request'] = feature_matrix[col].astype(str) == 'POST'
+
+        # Ensure boolean columns are int for the model
+        bool_cols = feature_matrix.select_dtypes(include=['bool']).columns
+        feature_matrix[bool_cols] = feature_matrix[bool_cols].astype(int)
 
         return feature_matrix
 
 
-# Example usage and testing
 if __name__ == "__main__":
-    # Sample data structure (matching your format)
+    # Simple self-test with your sample
     sample_data = {
         'ip': ['10.127.186.0', '10.81.43.23', '10.152.147.9'],
-        'timestamp': ['01/Mar/2025:00:00:11 -0400', '01/Mar/2025:00:00:51 -0400', '01/Mar/2025:00:05:56 -0400'],
+        'timestamp': [
+            '01/Mar/2025:00:00:11 -0400',
+            '01/Mar/2025:00:00:51 -0400',
+            '01/Mar/2025:00:05:56 -0400'
+        ],
         'method': ['GET', 'GET', 'POST'],
         'uri': [
             '//dvwa/dvwa/css/main.css',
@@ -356,8 +404,16 @@ if __name__ == "__main__":
             '//dvwa/vulnerabilities/xss_d/?default=Spanish'
         ],
         'status': [200, 200, 302],
-        'payload': ['-', "id=1%27+UNION+SELECT+1%2C%40%40version--+-&Submit=Submit", 'default=Spanish'],
-        'refer': ['-', 'http://10.93.160.179//dvwa/vulnerabilities/sqli/', '-'],
+        'payload': [
+            '-',
+            "id=1%27+UNION+SELECT+1%2C%40%40version--+-&Submit=Submit",
+            'default=Spanish'
+        ],
+        'refer': [
+            '-',
+            'http://10.93.160.179//dvwa/vulnerabilities/sqli/',
+            '-'
+        ],
         'user_agent': [
             'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:137.0) Gecko/20100101 Firefox/137.0',
             'Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1; Trident/5.0)',
@@ -366,23 +422,17 @@ if __name__ == "__main__":
         'label': ['normal', 'sql_injection', 'normal']
     }
 
-    df = pd.DataFrame(sample_data)
-
-    # Initialize feature extractor
+    df_sample = pd.DataFrame(sample_data)
     extractor = ThreatFeatureExtractor()
+    fm = extractor.create_feature_matrix(df_sample)
 
-    # Create feature matrix
-    feature_matrix = extractor.create_feature_matrix(df)
-
-    print("Feature Matrix Shape:", feature_matrix.shape)
-    print("\nFeature Columns:")
-    print(feature_matrix.columns.tolist())
-
-    print("\nSample Features for SQL Injection Detection:")
-    sql_row = feature_matrix[feature_matrix['label']
-                             == 'sql_injection'].iloc[0]
-    print(f"SQL Injection Score: {sql_row['sql_injection_score']}")
-    print(f"XSS Score: {sql_row['xss_score']}")
-    print(f"Payload Entropy: {sql_row['payload_entropy']:.2f}")
-    print(f"Special Characters Count: {sql_row['special_chars_count']}")
-    print(f"DVWA Module: {sql_row['dvwa_module']}")
+    print("Feature Matrix Shape:", fm.shape)
+    print("\nColumns:", fm.columns.tolist())
+    if 'sql_injection' in fm.get('label', []):
+        row = fm[fm['label'] == 'sql_injection'].iloc[0]
+        print("\nSQL Injection Row Example:")
+        print("  SQL Injection Score:", row['sql_injection_score'])
+        print("  XSS Score:", row['xss_score'])
+        print("  Payload Entropy:", row['payload_entropy'])
+        print("  Special Characters Count:", row['special_chars_count'])
+        print("  DVWA Module:", row['dvwa_module'])

@@ -2,6 +2,7 @@
 Data Preprocessing Script
 Prepares Apache log data for ML model training
 """
+
 import sys
 import os
 
@@ -35,9 +36,9 @@ except ImportError as e:
 os.makedirs('data/processed', exist_ok=True)
 os.makedirs('models', exist_ok=True)
 
-print("="*60)
+print("=" * 60)
 print("DATA PREPROCESSING SCRIPT")
-print("="*60 + "\n")
+print("=" * 60 + "\n")
 
 # Initialize feature extractor
 print("Step 1: Initializing feature extractor...")
@@ -52,7 +53,7 @@ if not os.path.exists(data_file):
 
 # Run preprocessing
 print(f"Step 2: Processing {data_file}")
-print("(This may take 2-5 minutes for 24MB file)\n")
+print("(This may take 2-5 minutes for ~24MB file)\n")
 
 try:
     preprocessed_data = preprocessing_workflow(
@@ -64,14 +65,17 @@ try:
         print("✗ Preprocessing failed - returned None")
         sys.exit(1)
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("PREPROCESSING COMPLETE!")
-    print("="*60 + "\n")
+    print("=" * 60 + "\n")
 
     # Verify data exists
     print("Step 3: Verifying preprocessed data...")
-    required_keys = ['X_train', 'X_val', 'X_test', 'y_train',
-                     'y_val', 'y_test', 'preprocessor', 'feature_columns']
+    required_keys = [
+        'X_train', 'X_val', 'X_test',
+        'y_train', 'y_val', 'y_test',
+        'preprocessor', 'feature_columns'
+    ]
 
     for key in required_keys:
         if key not in preprocessed_data:
@@ -80,20 +84,25 @@ try:
 
     print("✓ All required data present\n")
 
-    # Display summary
+    # Summary
     print("Dataset Split Summary:")
     print(f"  Training samples:   {len(preprocessed_data['X_train']):>8,}")
     print(f"  Validation samples: {len(preprocessed_data['X_val']):>8,}")
     print(f"  Testing samples:    {len(preprocessed_data['X_test']):>8,}")
-    print(
-        f"  Total samples:      {len(preprocessed_data['X_train']) + len(preprocessed_data['X_val']) + len(preprocessed_data['X_test']):>8,}\n")
+    total_samples = (
+        len(preprocessed_data['X_train']) +
+        len(preprocessed_data['X_val']) +
+        len(preprocessed_data['X_test'])
+    )
+    print(f"  Total samples:      {total_samples:>8,}\n")
 
-    print(f"Feature Information:")
+    print("Feature Information:")
     print(f"  Number of features: {len(preprocessed_data['feature_columns'])}")
     print(
-        f"  Feature columns: {preprocessed_data['feature_columns'][:5]}... (showing first 5)\n")
+        f"  Feature columns: {preprocessed_data['feature_columns'][:5]}... (showing first 5)\n"
+    )
 
-    # Display label distribution
+    # Label distribution (class names)
     print("Label Distribution:")
     preprocessor = preprocessed_data['preprocessor']
     label_names = preprocessor.label_encoder.classes_
@@ -104,7 +113,7 @@ try:
 
     save_path = 'data/processed/'
 
-    # Save training data
+    # Training data
     np.save(os.path.join(save_path, 'X_train.npy'),
             preprocessed_data['X_train'])
     print(f"  ✓ Saved X_train.npy ({preprocessed_data['X_train'].shape})")
@@ -113,26 +122,30 @@ try:
             preprocessed_data['y_train'])
     print(f"  ✓ Saved y_train.npy ({preprocessed_data['y_train'].shape})")
 
-    # Save validation data
-    np.save(os.path.join(save_path, 'X_val.npy'), preprocessed_data['X_val'])
+    # Validation data
+    np.save(os.path.join(save_path, 'X_val.npy'),
+            preprocessed_data['X_val'])
     print(f"  ✓ Saved X_val.npy ({preprocessed_data['X_val'].shape})")
 
-    np.save(os.path.join(save_path, 'y_val.npy'), preprocessed_data['y_val'])
+    np.save(os.path.join(save_path, 'y_val.npy'),
+            preprocessed_data['y_val'])
     print(f"  ✓ Saved y_val.npy ({preprocessed_data['y_val'].shape})")
 
-    # Save test data
-    np.save(os.path.join(save_path, 'X_test.npy'), preprocessed_data['X_test'])
+    # Test data
+    np.save(os.path.join(save_path, 'X_test.npy'),
+            preprocessed_data['X_test'])
     print(f"  ✓ Saved X_test.npy ({preprocessed_data['X_test'].shape})")
 
-    np.save(os.path.join(save_path, 'y_test.npy'), preprocessed_data['y_test'])
+    np.save(os.path.join(save_path, 'y_test.npy'),
+            preprocessed_data['y_test'])
     print(f"  ✓ Saved y_test.npy ({preprocessed_data['y_test'].shape})")
 
-    # Save feature column names
+    # Feature column names
     with open(os.path.join(save_path, 'feature_columns.pkl'), 'wb') as f:
         pickle.dump(preprocessed_data['feature_columns'], f)
-    print(f"  ✓ Saved feature_columns.pkl\n")
+    print("  ✓ Saved feature_columns.pkl\n")
 
-    # Verify files were created
+    # Verify files
     print("Step 5: Verifying saved files...")
     expected_files = [
         'X_train.npy', 'X_val.npy', 'X_test.npy',
@@ -155,19 +168,19 @@ try:
     else:
         print("\n✓ All files saved successfully!")
 
-    # Also verify preprocessor.pkl
+    # Verify preprocessor.pkl
     if os.path.exists('preprocessor.pkl'):
-        print(f"  ✓ preprocessor.pkl exists in root directory\n")
+        print("  ✓ preprocessor.pkl exists in root directory\n")
     else:
-        print(f"  ⚠ preprocessor.pkl not found in root directory\n")
+        print("  ⚠ preprocessor.pkl not found in root directory\n")
 
-    print("="*60)
+    print("=" * 60)
     print("DATA PREPROCESSING COMPLETED SUCCESSFULLY!")
-    print("="*60)
+    print("=" * 60)
     print("\nFiles created:")
     print("data/processed/ - Training/validation/test data")
     print("preprocessor.pkl - Preprocessor state")
-    print("="*60)
+    print("=" * 60)
 
 except Exception as e:
     print(f"\n✗ Error during preprocessing: {e}")
